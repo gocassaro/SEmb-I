@@ -1,0 +1,243 @@
+     1                                  segment code
+     2                                  ..start:
+     3 00000000 B8[0000]                        MOV     AX, data
+     4 00000003 8ED8                            MOV     DS, AX
+     5 00000005 B8[0000]                        MOV     AX, stack
+     6 00000008 8ED0                            MOV     SS, AX
+     7 0000000A BC[0001]                        MOV     SP, stacktop
+     8                                          
+     9 0000000D FA                              CLI                             ; Desabilita interrupções
+    10 0000000E 31C0                            XOR     AX, AX
+    11 00000010 8EC0                            MOV     ES, AX
+    12                                          
+    13                                          ; Salva e redireciona INT 8 (Clock)
+    14 00000012 26A12000                        MOV     AX, [ES:08h*4]
+    15 00000016 A3[0000]                        MOV     [offset_dos8], AX
+    16 00000019 26A12200                        MOV     AX, [ES:08h*4+2]
+    17 0000001D A3[0200]                        MOV     [cs_dos8], AX
+    18 00000020 268C0E2200                      MOV     [ES:08h*4+2], CS
+    19 00000025 26C7062000[8600]                MOV     WORD [ES:08h*4], ClockINT
+    20                                          
+    21                                          ; Salva e redireciona INT 9 (Teclado)
+    22 0000002C 26A12400                        MOV     AX, [ES:09h*4]
+    23 00000030 A3[0400]                        MOV     [offset_dos9], AX
+    24 00000033 26A12600                        MOV     AX, [ES:09h*4+2]
+    25 00000037 A3[0600]                        MOV     [cs_dos9], AX
+    26 0000003A 268C0E2600                      MOV     [ES:09h*4+2], CS
+    27 0000003F 26C7062400[D900]                MOV     WORD [ES:09h*4], keyINT
+    28                                          
+    29 00000046 FB                              STI                             ; Reabilita interrupções
+    30                                          
+    31                                  l1:
+    32 00000047 803E[0C00]01                    CMP     byte [sair_flag], 1     ; Verifica se a flag de saída foi ativada pelo teclado
+    33 0000004C 7412                            JE      fim
+    34 0000004E 803E[0D00]01                    CMP     byte [atualiza_tela], 1 ; Verifica se houve mudança de segundo ou ajuste manual
+    35 00000053 75F2                            JNE     l1
+    36 00000055 C606[0D00]00                    MOV     byte [atualiza_tela], 0
+    37 0000005A E8F900                          CALL    converte                ; Atualiza display na mesma linha
+    38 0000005D E9E7FF                          JMP     l1
+    39                                          
+    40                                  fim:
+    41 00000060 FA                              CLI
+    42 00000061 31C0                            XOR     AX, AX
+    43 00000063 8EC0                            MOV     ES, AX
+    44                                          ; Restaura INT 8 original
+    45 00000065 A1[0200]                        MOV     AX, [cs_dos8]
+    46 00000068 26A32200                        MOV     [ES:08h*4+2], AX
+    47 0000006C A1[0000]                        MOV     AX, [offset_dos8]
+    48 0000006F 26A32000                        MOV     [ES:08h*4], AX
+    49                                          ; Restaura INT 9 original
+    50 00000073 A1[0600]                        MOV     AX, [cs_dos9]
+    51 00000076 26A32600                        MOV     [ES:09h*4+2], AX
+    52 0000007A A1[0400]                        MOV     AX, [offset_dos9]
+    53 0000007D 26A32400                        MOV     [ES:09h*4], AX
+    54 00000081 FB                              STI
+    55                                          
+    56 00000082 B44C                            MOV     AH, 4Ch
+    57 00000084 CD21                            INT     21h                     ; Retorna ao DOS
+    58                                  
+    59                                  ; === ISR DO RELÓGIO (INT 8) ===
+    60                                  ClockINT:
+    61 00000086 50                              PUSH    AX
+    62 00000087 1E                              PUSH    DS
+    63 00000088 B8[0000]                        MOV     AX, data
+    64 0000008B 8ED8                            MOV     DS, AX
+    65                                          
+    66 0000008D FE06[0800]                      INC     byte [tique]
+    67 00000091 803E[0800]12                    CMP     byte [tique], 18
+    68 00000096 723A                            JB      Fimrel
+    69 00000098 C606[0800]00                    MOV     byte [tique], 0
+    70 0000009D C606[0D00]01                    MOV     byte [atualiza_tela], 1 ; Marca para repintar a tela na virada do segundo
+    71                                          
+    72 000000A2 FE06[0900]                      INC     byte [segundo]
+    73 000000A6 803E[0900]3C                    CMP     byte [segundo], 60
+    74 000000AB 7225                            JB      Fimrel
+    75 000000AD C606[0900]00                    MOV     byte [segundo], 0
+    76                                          
+    77 000000B2 FE06[0A00]                      INC     byte [minuto]
+    78 000000B6 803E[0A00]3C                    CMP     byte [minuto], 60
+    79 000000BB 7215                            JB      Fimrel
+    80 000000BD C606[0A00]00                    MOV     byte [minuto], 0
+    81                                          
+    82 000000C2 FE06[0B00]                      INC     byte [hora]
+    83 000000C6 803E[0B00]18                    CMP     byte [hora], 24
+    84 000000CB 7205                            JB      Fimrel
+    85 000000CD C606[0B00]00                    MOV     byte [hora], 0
+    86                                          
+    87                                  Fimrel:
+    88 000000D2 B020                            MOV     AL, 20h
+    89 000000D4 E620                            OUT     20h, AL                 ; EOI no PIC
+    90 000000D6 1F                              POP     DS
+    91 000000D7 58                              POP     AX
+    92 000000D8 CF                              IRET
+    93                                  
+    94                                  ; === ISR DO TECLADO (INT 9) ===
+    95                                  keyINT:
+    96 000000D9 50                              PUSH    AX
+    97 000000DA 1E                              PUSH    DS
+    98 000000DB B8[0000]                        MOV     AX, data
+    99 000000DE 8ED8                            MOV     DS, AX
+   100                                          
+   101 000000E0 E460                            IN      AL, 60h                 ; Lê Make/Break Code da porta
+   102                                          
+   103 000000E2 3C01                            CMP     AL, 01h                 ; Make code do ESC
+   104 000000E4 7508                            JNE     k_d
+   105 000000E6 C606[0C00]01                    MOV     byte [sair_flag], 1
+   106 000000EB E95700                          JMP     k_end
+   107                                          
+   108 000000EE 3C20                    k_d:    CMP     AL, 20h                 ; Make code da tecla 'd'
+   109 000000F0 750D                            JNE     k_v
+   110 000000F2 C606[0E00]01                    MOV     byte [formato], 1       ; Seta 12h
+   111 000000F7 C606[0D00]01                    MOV     byte [atualiza_tela], 1
+   112 000000FC E94600                          JMP     k_end
+   113                                          
+   114 000000FF 3C2F                    k_v:    CMP     AL, 2Fh                 ; Make code da tecla 'v'
+   115 00000101 750D                            JNE     k_h
+   116 00000103 C606[0E00]00                    MOV     byte [formato], 0       ; Seta 24h
+   117 00000108 C606[0D00]01                    MOV     byte [atualiza_tela], 1
+   118 0000010D E93500                          JMP     k_end
+   119                                          
+   120 00000110 3C23                    k_h:    CMP     AL, 23h                 ; Make code da tecla 'h' (ajuste de hora)
+   121 00000112 7518                            JNE     k_m
+   122 00000114 FE06[0B00]                      INC     byte [hora]
+   123 00000118 803E[0B00]18                    CMP     byte [hora], 24
+   124 0000011D 7205                            JB      k_h_ok
+   125 0000011F C606[0B00]00                    MOV     byte [hora], 0
+   126 00000124 C606[0D00]01            k_h_ok: MOV     byte [atualiza_tela], 1 ; Permite visualização imediata do ajuste
+   127 00000129 E91900                          JMP     k_end
+   128                                          
+   129 0000012C 3C32                    k_m:    CMP     AL, 32h                 ; Make code da tecla 'm' (ajuste de minuto)
+   130 0000012E 7515                            JNE     k_end
+   131 00000130 FE06[0A00]                      INC     byte [minuto]
+   132 00000134 803E[0A00]3C                    CMP     byte [minuto], 60
+   133 00000139 7205                            JB      k_m_ok
+   134 0000013B C606[0A00]00                    MOV     byte [minuto], 0
+   135 00000140 C606[0D00]01            k_m_ok: MOV     byte [atualiza_tela], 1 ; Permite visualização imediata do ajuste
+   136                                          
+   137                                  k_end:
+   138 00000145 E461                            IN      AL, 61h                 ; Lê porta de controle
+   139 00000147 0C80                            OR      AL, 80h                 ; Seta bit de reset do teclado
+   140 00000149 E661                            OUT     61h, AL
+   141 0000014B 247F                            AND     AL, 7Fh                 ; Restaura estado
+   142 0000014D E661                            OUT     61h, AL
+   143 0000014F B020                            MOV     AL, 20h
+   144 00000151 E620                            OUT     20h, AL                 ; EOI no PIC
+   145 00000153 1F                              POP     DS
+   146 00000154 58                              POP     AX
+   147 00000155 CF                              IRET
+   148                                  
+   149                                  ; === FUNÇÃO DE FORMATAÇÃO E IMPRESSÃO NA TELA ===
+   150                                  converte:
+   151 00000156 50                              PUSH    AX
+   152 00000157 53                              PUSH    BX
+   153 00000158 52                              PUSH    DX
+   154 00000159 1E                              PUSH    DS
+   155 0000015A B8[0000]                        MOV     AX, data
+   156 0000015D 8ED8                            MOV     DS, AX
+   157                                          
+   158 0000015F A0[0B00]                        MOV     AL, [hora]
+   159 00000162 803E[0E00]01                    CMP     byte [formato], 1
+   160 00000167 752A                            JNE     conv_24h
+   161                                          
+   162                                          ; Lógica do formato 12h
+   163 00000169 3C0C                            CMP     AL, 12
+   164 0000016B 7313                            JAE     eh_pm
+   165                                  eh_am:
+   166 0000016D C606[1900]41                    MOV     byte [horario+10], 'A'  ; Aplica AM
+   167 00000172 C606[1A00]4D                    MOV     byte [horario+11], 'M'
+   168 00000177 3C00                            CMP     AL, 0
+   169 00000179 7522                            JNE     calc_digits
+   170 0000017B B00C                            MOV     AL, 12                  ; Se for 00h, imprime 12 AM
+   171 0000017D E91D00                          JMP     calc_digits
+   172                                          
+   173                                  eh_pm:
+   174 00000180 C606[1900]50                    MOV     byte [horario+10], 'P'  ; Aplica PM
+   175 00000185 C606[1A00]4D                    MOV     byte [horario+11], 'M'
+   176 0000018A 3C0C                            CMP     AL, 12
+   177 0000018C 740F                            JE      calc_digits             ; Se for 12h, imprime 12 PM
+   178 0000018E 2C0C                            SUB     AL, 12                  ; 13h vira 01h PM, etc.
+   179 00000190 E90A00                          JMP     calc_digits
+   180                                          
+   181                                  conv_24h:
+   182                                          ; Lógica do formato 24h
+   183 00000193 C606[1900]20                    MOV     byte [horario+10], ' '  ; Apaga a string AM/PM
+   184 00000198 C606[1A00]20                    MOV     byte [horario+11], ' '
+   185                                          
+   186                                  calc_digits:
+   187                                          ; Converte hora pronta em AL para ASCII
+   188 0000019D 30E4                            XOR     AH, AH
+   189 0000019F B30A                            MOV     BL, 10
+   190 000001A1 F6F3                            DIV     BL
+   191 000001A3 0430                            ADD     AL, 30h
+   192 000001A5 A2[1000]                        MOV     byte [horario+1], AL
+   193 000001A8 80C430                          ADD     AH, 30h
+   194 000001AB 8826[1100]                      MOV     byte [horario+2], AH
+   195                                          
+   196                                          ; Converte Minutos
+   197 000001AF 30E4                            XOR     AH, AH
+   198 000001B1 A0[0A00]                        MOV     AL, byte [minuto]
+   199 000001B4 F6F3                            DIV     BL
+   200 000001B6 0430                            ADD     AL, 30h
+   201 000001B8 A2[1300]                        MOV     byte [horario+4], AL
+   202 000001BB 80C430                          ADD     AH, 30h
+   203 000001BE 8826[1400]                      MOV     byte [horario+5], AH
+   204                                          
+   205                                          ; Converte Segundos
+   206 000001C2 30E4                            XOR     AH, AH
+   207 000001C4 A0[0900]                        MOV     AL, byte [segundo]
+   208 000001C7 F6F3                            DIV     BL
+   209 000001C9 0430                            ADD     AL, 30h
+   210 000001CB A2[1600]                        MOV     byte [horario+7], AL
+   211 000001CE 80C430                          ADD     AH, 30h
+   212 000001D1 8826[1700]                      MOV     byte [horario+8], AH
+   213                                          
+   214                                          ; Imprime string (uso de '\r' 13 sobrescreve a mesma linha)
+   215 000001D5 B409                            MOV     AH, 09h
+   216 000001D7 BA[0F00]                        MOV     DX, horario
+   217 000001DA CD21                            INT     21h
+   218                                          
+   219 000001DC 1F                              POP     DS
+   220 000001DD 5A                              POP     DX
+   221 000001DE 5B                              POP     BX
+   222 000001DF 58                              POP     AX
+   223 000001E0 C3                              RET
+   224                                  
+   225                                  segment data
+   226 00000000 0000                            offset_dos8     DW 0
+   227 00000002 0000                            cs_dos8         DW 0
+   228 00000004 0000                            offset_dos9     DW 0
+   229 00000006 0000                            cs_dos9         DW 0
+   230 00000008 00                              tique           DB 0
+   231 00000009 00                              segundo         DB 0
+   232 0000000A 00                              minuto          DB 0
+   233 0000000B 00                              hora            DB 0
+   234 0000000C 00                              sair_flag       DB 0
+   235 0000000D 01                              atualiza_tela   DB 1
+   236 0000000E 00                              formato         DB 0            ; 0 = 24h, 1 = 12h
+   237                                          ; String de exibição. O byte '13' retorna o cursor ao início da linha sem pular linha.
+   238 0000000F 0D30303A30303A3030-             horario         DB 13,'00:00:00    $' 
+   239 00000018 2020202024         
+   240                                  
+   241                                  segment stack stack
+   242 00000000 <res 00000100>                  resb 256
+   243                                  stacktop:
