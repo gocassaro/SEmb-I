@@ -1,3 +1,7 @@
+; Integrantes: Gustavo Cassaro e Ellyas Hiagamo
+; Obs: Não tinha certeza de como exatamente era pra ser o ajuste de hora, então
+; no keyINT definimos h e m pra aumentar a hora ou minuto em 1, e vai ciclando 
+; quando chega no limite do formato.
 segment code
 ..start:
         MOV     AX, data
